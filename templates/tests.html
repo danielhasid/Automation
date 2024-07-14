@@ -208,6 +208,22 @@
             transform: translateY(-2px);
         }
 
+        .kill-tests-btn {
+            background-color: #ff3b3b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: background-color 0.3s, transform 0.3s;
+        }
+
+        .kill-tests-btn:hover {
+            background-color: #c23030;
+            transform: translateY(-2px);
+        }
+
         .progress-bar {
             width: 100%;
             background-color: #ddd;
@@ -268,12 +284,13 @@
         <button class="run-full-regression-btn" data-test="run_full_regression">Run Full Regression</button>
         <button class="run-full-regression-btn" data-test="run_api_regression">Run API's Regression</button>
         <button class="run-full-regression-btn" data-test="run_max_regression">Run Max Tests</button>
+        <button class="kill-tests-btn" id="killTestsBtn">Kill Running Tests</button>
     </div>
 
-    <div class="result"></div>
+    <div class="result" id="resultDiv"></div>
 
     <div class="container">
-        <h1 class="dashboard-title">Progress</h1>
+        <h1 class="dashboard-title" id="progressTitle">Progress</h1>
         <div class="progress-bar" id="progressBar">
             <div class="progress-bar-inner" id="progressBarInner">0%</div>
         </div>
@@ -346,21 +363,21 @@
                 <div class="result"></div>
             </li>
             <li class="rubric-to-hide">
-                <h2>10</h2>
+                <h2>10</h3>
                 <h3>Max login</h3>
                 <p><strong>Description:</strong> Testing MAX flow</p>
                 <button class="run-test-btn" data-test="test_max_login">Run Test</button>
                 <div class="result"></div>
             </li>
             <li class="rubric-to-hide">
-                <h2>11</h2>
+                <h2>11</h3>
                 <h3>Max convert</h3>
                 <p><strong>Description:</strong> Continuing test MAX flow</p>
                 <button class="run-test-btn" data-test="test_max_convert">Run Test</button>
                 <div class="result"></div>
             </li>
             <li class="rubric-to-hide">
-                <h2>12</h2>
+                <h2>12</h3>
                 <h3>Max deposit</h3>
                 <p><strong>Description:</strong> Continuing test MAX flow</p>
                 <button class="run-test-btn" data-test="test_max_deposit">Run Test</button>
@@ -401,7 +418,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script>
         $(document).ready(function() {
-            let currentMode = 'demo'; // Default mode
+            let currentMode = 'qa'; // Default mode
 
             function createDownloadLink(content, filename, text) {
                 const link = document.createElement('a');
@@ -424,6 +441,11 @@
                 }
             }
 
+            function updateDashboardTitle() {
+                console.log(`Updating dashboard title to: Progress - ${currentMode}`);
+                $('#progressTitle').text(`Progress - ${currentMode}`);
+            }
+
             $('#modeToggle').click(function() {
                 $(this).toggleClass('active');
                 if ($(this).hasClass('active')) {
@@ -434,6 +456,7 @@
                         success: function(response) {
                             console.log('Switched to QA mode');
                             toggleRubrics();
+                            updateDashboardTitle();
                         },
                         error: function(xhr, status, error) {
                             console.log('Error switching to QA mode: ' + xhr.responseText);
@@ -447,6 +470,7 @@
                         success: function(response) {
                             console.log('Switched to Demo mode');
                             toggleRubrics();
+                            updateDashboardTitle();
                         },
                         error: function(xhr, status, error) {
                             console.log('Error switching to Demo mode: ' + xhr.responseText);
@@ -564,6 +588,24 @@
                 });
             });
 
+            $('#killTestsBtn').click(function() {
+                $.ajax({
+                    url: '/kill_tests',
+                    type: 'POST',
+                    success: function(response) {
+                        console.log('Successfully killed the running tests');
+                        resetProgressBar();
+                        const logMessage = `Process killed in ${currentMode} mode.`;
+                        $('#logWindow').show().append(`<br>${logMessage}`);
+                        $('#resultDiv').html('<span class="result fail">Tests were killed.</span>');
+                    },
+                    error: function(xhr, status, error) {
+                        console.log('Error killing the tests: ' + xhr.responseText);
+                        $('#resultDiv').html('<span class="result fail">An error occurred while killing the tests: ' + xhr.responseText + '</span>');
+                    }
+                });
+            });
+
             // Handle Run Test button click
             $('.run-test-btn').click(function() {
                 var button = $(this);
@@ -592,9 +634,9 @@
 
             // Initial call to set visibility based on default mode
             toggleRubrics();
+            updateDashboardTitle();
         });
     </script>
-
 </body>
 
 </html>
