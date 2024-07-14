@@ -11,6 +11,8 @@ app = Flask(__name__)
 
 # Directory to store test reports
 REPORTS_DIR = r'C:\Users\Administrator\Automation\Tests\test_reports'
+is_running = False
+running_tests_process = None
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 tests = [
@@ -36,10 +38,6 @@ tests = [
 def tests_page():
     return render_template('tests.html')
 
-# @app.route('/index.html')
-# def dashboard_page():
-#     return render_template('index.html')
-
 @app.route('/progress.html')
 def progress_page():
     return render_template('progress.html')
@@ -57,6 +55,20 @@ def get_data():
             data = json.load(f)
             datasets.append(data)
     return jsonify(datasets)
+
+@app.route('/kill_tests', methods=['POST'])
+def kill_tests():
+    global is_running, running_tests_process, progress, CURRENT_MODE
+    if not is_running:
+        return jsonify({"error": "No tests are currently running"}), 400
+
+    if running_tests_process:
+        running_tests_process.terminate()
+        running_tests_process = None
+
+    is_running = False
+    progress["log"] += f"\nProcess killed in {CURRENT_MODE} mode."
+    return jsonify({"message": "Running tests were successfully killed"}), 200
 
 CURRENT_MODE = 'demo'  # Default mode
 run_type = ""
@@ -137,8 +149,6 @@ def run_test(test_name):
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
-
-
 @app.route('/run_full_api', methods=['POST'])
 def run_full_api():
     try:
@@ -150,7 +160,7 @@ def run_full_api():
         # Collecting all test paths for full API test
         test_paths = [test['path'] for test in tests if test['name'] == "api"]
 
-        threading.Thread(target=run_api_tests, args=(test_paths,'regression',"Ofakimdb_Copy")).start()
+        threading.Thread(target=run_api_tests, args=(test_paths, 'regression', "Ofakimdb_Copy")).start()
         return jsonify(success=True)
 
     except Exception as e:
@@ -167,17 +177,21 @@ def run_max_api():
         # Collecting all test paths for full API test
         test_paths = [test['path'] for test in tests if test['name'] == "max"]
 
-        threading.Thread(target=run_api_tests, args=(test_paths,'max' ,'Ofakimdb_Copy')).start()
+        threading.Thread(target=run_api_tests, args=(test_paths, 'max', 'Ofakimdb_Copy')).start()
         return jsonify(success=True)
 
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
-
 @app.route('/run_full_regression', methods=['POST'])
 def run_full_regression():
     try:
         global progress
+        global is_running, running_tests_process
+        if is_running:
+            return jsonify({"error": "Tests are already running"}), 400
+
+        is_running = True
         progress["running"] = True
         progress["progress"] = 0
         progress["log"] = ""
@@ -205,9 +219,8 @@ def run_full_regression():
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
-
 def run_tests(test_paths, mode, db_connection, report_file, run_type):
-    global progress
+    global progress, is_running, running_tests_process
     progress["running"] = True
     progress["progress"] = 0
     progress["log"] = ""
@@ -222,15 +235,16 @@ def run_tests(test_paths, mode, db_connection, report_file, run_type):
         progress["running"] = False
         progress["progress"] = 100
         progress["log"] = "No tests found."
+        is_running = False
         return
 
-    result = subprocess.Popen(
+    running_tests_process = subprocess.Popen(
         ['pytest'] + test_paths + [f'-m {run_type}', '-v', f'--base-url={mode}', f'--db-name={db_connection}', f'--json-report-file={report_file}'],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
 
     completed_tests = 0
-    for line in iter(result.stdout.readline, ''):
+    for line in iter(running_tests_process.stdout.readline, ''):
         progress["log"] += line
         match = re.search(r'\[\s*(\d+)%\]', line)
         if match:
@@ -239,16 +253,16 @@ def run_tests(test_paths, mode, db_connection, report_file, run_type):
             progress["progress"] = percentage
         print(line, end='')
 
-    result.wait()
+    running_tests_process.wait()
     progress["running"] = False
     progress["progress"] = 100
+    is_running = False
 
     with open(report_file, 'r') as f:
         report_content = json.load(f)
 
-
-def run_api_tests(test_paths,mark,db_env=None):
-    global progress
+def run_api_tests(test_paths, mark, db_env=None):
+    global progress, is_running, running_tests_process
     progress["running"] = True
     progress["progress"] = 0
     progress["log"] = ""
@@ -263,15 +277,16 @@ def run_api_tests(test_paths,mark,db_env=None):
         progress["running"] = False
         progress["progress"] = 100
         progress["log"] = "No tests found."
+        is_running = False
         return
 
-    result = subprocess.Popen(
-        ['pytest'] + test_paths + ['-v', f'-m {mark}',f'--db-name={db_env}'],
+    running_tests_process = subprocess.Popen(
+        ['pytest'] + test_paths + ['-v', f'-m {mark}', f'--db-name={db_env}'],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
 
     completed_tests = 0
-    for line in iter(result.stdout.readline, ''):
+    for line in iter(running_tests_process.stdout.readline, ''):
         progress["log"] += line
         match = re.search(r'\[\s*(\d+)%\]', line)
         if match:
@@ -280,12 +295,10 @@ def run_api_tests(test_paths,mark,db_env=None):
             progress["progress"] = percentage
         print(line, end='')
 
-    result.wait()
+    running_tests_process.wait()
     progress["running"] = False
     progress["progress"] = 100
-
-    # with open(report_file, 'r') as f:
-    #     report_content = json.load(f)
+    is_running = False
 
 @app.route('/favicon.ico')
 def favicon():
